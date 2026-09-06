@@ -100,6 +100,19 @@ public sealed class SignalSenderTests
     }
 
     [TestMethod]
+    public void TryParse_AcceptsAWholePastedBindingValue()
+    {
+        // `ykeys signal @signal:YSpot.Signal` is the likeliest thing a user
+        // types: the right-hand side straight out of ykeys.json. The verb
+        // hands it here already prefixed only when it was not, so both forms
+        // have to land on the same target.
+        Assert.IsTrue(SignalSender.TryParse("@signal:YSpot.Signal#3", out SignalTarget? a, out _));
+        Assert.IsTrue(SignalSender.IsSignal("@signal:YSpot.Signal#3"));
+        Assert.AreEqual("YSpot.Signal", a!.WindowClass);
+        Assert.AreEqual(3u, a.Code);
+    }
+
+    [TestMethod]
     public void Send_SaysSoWhenNothingIsListening()
     {
         // The common case in practice: the app is not running yet. It must be a

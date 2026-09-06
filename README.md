@@ -69,6 +69,13 @@ is up to the app — YSpot's are 0 toggle, 1 show, 2 settings, 3 clipboard).
 YKeys finds the window, hands it the right to take the foreground, and posts a
 message. Microseconds, no process.
 
+**The app has to hand the chord over first.** `RegisterHotKey` is first-come,
+so if the app you are signalling registers `alt+space` itself at startup — as
+YSpot does out of the box — YKeys is refused that chord and skips the binding
+with a line in the log. Nothing looks broken, because the chord still opens
+the app: by *its* registration, not through YKeys. In YSpot that switch is
+Settings → "Let YKeys hold the hotkey"; other apps will have their own.
+
 If the app is not running, the chord logs a line saying so and does nothing;
 start the app and the same chord starts working, no reload needed.
 

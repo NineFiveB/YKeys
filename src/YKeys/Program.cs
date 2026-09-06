@@ -48,7 +48,13 @@ internal static class Program
                   "win+v":     "@signal:YSpot.Signal#3"    ...and which action
 
                 The app must be running; if it is not, the chord logs and does
-                nothing until it is. To check one without binding a key:
+                nothing until it is. It must also not be holding the chord
+                itself: RegisterHotKey is first-come, so if the app you are
+                signalling already registered alt+space, ykeys is refused it
+                and skips the binding. Tell the app to hand the chord over
+                first (YSpot: Settings, "Let YKeys hold the hotkey").
+
+                To check a target without binding a key:
 
                   ykeys signal YSpot.Signal      send it once, and say what happened
 
@@ -212,7 +218,14 @@ internal static class Program
             return 2;
         }
 
-        string spec = SignalSender.Prefix + args[0];
+        // Accept what the user most likely has on the clipboard: the whole
+        // right-hand side out of ykeys.json, prefix and all. Prepending the
+        // prefix unconditionally turned `ykeys signal @signal:YSpot.Signal`
+        // into a hunt for a window class literally called "@signal:YSpot.Signal"
+        // and answered "is the app running?" — the one answer the verb exists
+        // to rule out, delivered with full confidence, for the likeliest typo.
+        string arg = args[0];
+        string spec = SignalSender.IsSignal(arg) ? arg : SignalSender.Prefix + arg;
         if (!SignalSender.TryParse(spec, out SignalTarget? target, out string? error))
         {
             Console.Error.WriteLine($"ykeys: {error}");

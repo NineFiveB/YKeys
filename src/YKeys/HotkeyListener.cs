@@ -137,10 +137,22 @@ internal static unsafe class HotkeyListener
                 // has no query, and the table is not enumerable from user mode.
                 // So name the chord, admit we cannot say who took it, and point
                 // at the usual suspects in the order they actually turn up.
+                // For a @signal binding the likeliest owner is the very app
+                // the binding points at: RegisterHotKey is first-come, and an
+                // app that has not been told to hand its chord over registers
+                // it at startup. That case is silent in use — the chord still
+                // opens the app, by ITS registration, not ours — so it is
+                // worth naming ahead of the general suspects.
+                string suspects = binding.Signal is { } sig
+                    ? $"the likeliest owner is {sig.WindowClass}'s own app, which registers its "
+                        + "chord at startup unless told to hand it over; otherwise GPU and game "
+                        + "overlays (NVIDIA, AMD, Steam, Discord), vendor utilities, and Windows' "
+                        + "own Win+ combos"
+                    : "the usual causes are GPU and game overlays (NVIDIA, AMD, Steam, Discord), "
+                        + "vendor utilities, and Windows' own Win+ combos";
                 Log(err == ErrorHotkeyAlreadyRegistered
                     ? $"hotkey '{binding.Chord}' is already owned by another program — skipped. "
-                    + "Windows cannot say which; the usual causes are GPU and game overlays "
-                    + "(NVIDIA, AMD, Steam, Discord), vendor utilities, and Windows' own Win+ combos"
+                    + $"Windows cannot say which; {suspects}"
                     : $"hotkey '{binding.Chord}' failed to register (error {err})");
             }
         }

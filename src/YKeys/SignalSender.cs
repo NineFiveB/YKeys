@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 
@@ -142,14 +143,34 @@ internal static unsafe class SignalSender
             s_message = PInvoke.RegisterWindowMessage(MessageName);
             if (s_message == 0)
             {
-                failure = $"could not register the '{MessageName}' message";
+                failure = $"could not register the '{MessageName}' message "
+                    + $"(error {Marshal.GetLastPInvokeError()})";
                 return false;
             }
         }
 
         if (!PInvoke.PostMessage(hwnd, s_message, (WPARAM)target.Code, default))
         {
-            failure = $"could not post to '{target.WindowClass}'";
+            // The code is the whole diagnosis here, and dropping it left one
+            // sentence for three different problems with three different
+            // remedies. We got PAST the window lookup, so the app is plainly
+            // there and "is it running?" is already answered.
+            int err = Marshal.GetLastPInvokeError();
+            string why = err switch
+            {
+                // UIPI. Not reachable with YSpot, whose shell is specified
+                // unelevated — but the @signal protocol is published for any
+                // app, and a target the user runs elevated needs
+                // ChangeWindowMessageFilterEx on its own side.
+                5 => " — it runs at a higher integrity level than ykeys, and has not "
+                    + "allowed this message through (ChangeWindowMessageFilterEx)",
+                // The window went away between the lookup and the post.
+                1400 => " — the window went away as we posted; the app is probably restarting",
+                // 10,000 queued messages: the target's pump is wedged.
+                1816 => " — its message queue is full, so the app has stopped pumping",
+                _ => string.Empty,
+            };
+            failure = $"could not post to '{target.WindowClass}' (error {err}){why}";
             return false;
         }
 
