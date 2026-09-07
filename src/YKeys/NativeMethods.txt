@@ -6,6 +6,11 @@ WM_APP
 HOT_KEY_MODIFIERS
 VIRTUAL_KEY
 
+// Retrying a chord another program held
+SetTimer
+KillTimer
+WM_TIMER
+
 // Hidden window + message pump
 GetMessageW
 TranslateMessage

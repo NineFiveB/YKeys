@@ -1,0 +1,5 @@
+// Occupying a chord so the retry has something to wait for.
+RegisterHotKey
+UnregisterHotKey
+HOT_KEY_MODIFIERS
+VIRTUAL_KEY

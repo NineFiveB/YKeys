@@ -20,11 +20,27 @@ internal static unsafe class HotkeyListener
     private const uint ApplyBindingsMessage = PInvoke.WM_APP + 1;
     private const int ErrorHotkeyAlreadyRegistered = 1409; // WIN32 ERROR_HOTKEY_ALREADY_REGISTERED
 
+    /// How often a chord another program holds is tried again.
+    ///
+    /// Chords change hands. The case this exists for: a suite where one app is
+    /// told to hand its chord to ykeys — until it does, ykeys is refused the
+    /// registration and skips the binding, and if it never looked again the
+    /// hand-off would leave NOBODY holding the chord. The app released it, we
+    /// gave up before it did, and nothing says so on either side. Five seconds
+    /// because RegisterHotKey costs nanoseconds and the wait is a person
+    /// standing at the keyboard wondering whether it worked.
+    private const uint RetryTimerId = 1;
+    private const uint RetryIntervalMs = 5_000;
+
     private static volatile uint s_threadId;
     private static IReadOnlyList<HotkeyBinding>? s_pending;
 
     // Touched only on the pump thread (WndProc runs there too) — no locking.
     private static readonly Dictionary<int, HotkeyBinding> s_registered = [];
+
+    /// Bindings whose chord was taken when we last tried. Pump thread only,
+    /// like <see cref="s_registered"/>; drained by <see cref="RetrySkipped"/>.
+    private static readonly List<HotkeyBinding> s_skipped = [];
 
     // Ids are never reused across applies: a WM_HOTKEY already posted for an
     // old registration must miss the lookup, not resolve to a new binding.
@@ -113,6 +129,7 @@ internal static unsafe class HotkeyListener
         }
 
         UnregisterAll(hwnd);
+        s_skipped.Clear();
         int registered = 0;
         var skipped = new List<string>();
         foreach (HotkeyBinding binding in bindings)
@@ -133,6 +150,7 @@ internal static unsafe class HotkeyListener
             {
                 int err = Marshal.GetLastPInvokeError();
                 skipped.Add(binding.Chord);
+                s_skipped.Add(binding);
                 // Windows offers no way to ask who owns a hotkey — RegisterHotKey
                 // has no query, and the table is not enumerable from user mode.
                 // So name the chord, admit we cannot say who took it, and point
@@ -159,7 +177,53 @@ internal static unsafe class HotkeyListener
 
         Log(skipped.Count == 0
             ? $"hotkeys: {registered}/{bindings.Count} registered"
-            : $"hotkeys: {registered}/{bindings.Count} registered — skipped: {string.Join(", ", skipped)}");
+            : $"hotkeys: {registered}/{bindings.Count} registered — skipped: {string.Join(", ", skipped)}"
+                + $"; retrying every {RetryIntervalMs / 1000} s in case it is freed");
+        ArmRetry(hwnd);
+    }
+
+    /// Run the retry timer exactly while something is waiting for a chord.
+    private static void ArmRetry(HWND hwnd)
+    {
+        if (s_skipped.Count > 0)
+        {
+            // Re-arming an existing id just resets it, which is what we want.
+            PInvoke.SetTimer(hwnd, RetryTimerId, RetryIntervalMs, null);
+        }
+        else
+        {
+            PInvoke.KillTimer(hwnd, RetryTimerId);
+        }
+    }
+
+    /// Try the chords someone else held, and keep the ones that came free.
+    ///
+    /// Only the skipped ones: re-applying everything would unregister working
+    /// chords for the instant it took to put them back, and a press in that
+    /// window is a press the user has to repeat.
+    private static void RetrySkipped(HWND hwnd)
+    {
+        for (int i = s_skipped.Count - 1; i >= 0; i--)
+        {
+            HotkeyBinding binding = s_skipped[i];
+            if (s_nextId > 0xBFFF)
+            {
+                s_nextId = 1;
+            }
+            if (!PInvoke.RegisterHotKey(
+                    hwnd,
+                    s_nextId,
+                    binding.Modifiers | HOT_KEY_MODIFIERS.MOD_NOREPEAT,
+                    binding.VirtualKey))
+            {
+                continue; // still held; quiet, or this would log every 5 s
+            }
+            s_registered[s_nextId] = binding;
+            s_nextId++;
+            s_skipped.RemoveAt(i);
+            Log($"hotkey '{binding.Chord}' came free and is now registered");
+        }
+        ArmRetry(hwnd);
     }
 
     private static void UnregisterAll(HWND hwnd)
@@ -176,6 +240,11 @@ internal static unsafe class HotkeyListener
     {
         try
         {
+            if (msg == PInvoke.WM_TIMER && (uint)wParam.Value == RetryTimerId)
+            {
+                RetrySkipped(hwnd);
+                return new LRESULT(0);
+            }
             if (msg == PInvoke.WM_HOTKEY && s_registered.TryGetValue((int)wParam.Value, out HotkeyBinding? binding))
             {
                 // Without this the log cannot tell "never registered" from "the
@@ -207,6 +276,10 @@ internal static unsafe class HotkeyListener
     /// <summary>How many chords are live right now — reported when a failed
     /// reload leaves the previous set in place.</summary>
     public static int RegisteredCount => s_registered.Count;
+
+    /// <summary>How many chords are waiting for someone else to let go —
+    /// non-zero exactly while the retry timer is armed.</summary>
+    public static int SkippedCount => s_skipped.Count;
 
     private static void Log(string message) => Program.Log(message);
 }

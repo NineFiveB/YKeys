@@ -10,6 +10,9 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- The retry test has to OCCUPY a chord to prove ykeys takes it once it
+         is freed, which needs RegisterHotKey of its own. -->
+    <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
